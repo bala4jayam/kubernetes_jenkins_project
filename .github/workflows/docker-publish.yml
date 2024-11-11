@@ -2,7 +2,7 @@ name: Release CI/CD Pipeline
 
 on:
   push:
-    branches: multi-integration
+    branches: testing
 
 permissions:
   contents: write
