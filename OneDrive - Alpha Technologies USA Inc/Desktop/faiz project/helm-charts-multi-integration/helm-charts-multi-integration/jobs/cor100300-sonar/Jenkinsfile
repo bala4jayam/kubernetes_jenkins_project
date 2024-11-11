@@ -1,0 +1,65 @@
+pipeline {
+  parameters {
+    string( name: "gittag", description: "tag version of matrix", defaultValue: "main", trim: false)
+  }
+    agent {
+        kubernetes {
+            yaml '''
+apiVersion: v1
+kind: Pod
+spec:
+  containers:
+  - name: aspnet
+    image: 191134568411.dkr.ecr.us-east-2.amazonaws.com/jenkins-agent:sonar-dotnet
+    command:
+    - sleep
+    args:
+    - infinity
+'''
+          defaultContainer 'aspnet'
+        }
+    }
+    stages {
+        stage('Main') {
+            steps {
+                script {
+                  container('jnlp') {
+                    checkout([
+                      $class: 'GitSCM',
+                      branches: [[name: "${params.gittag}"]],
+                      extensions: [
+                        [$class: 'RelativeTargetDirectory', relativeTargetDir: "${WORKSPACE}/Corcentric.Microservices.Cor100300"]
+                      ], gitTool: 'Default',
+                      userRemoteConfigs: [
+                        [credentialsId: 'github', url: "https://github.com/CorNexGen/Corcentric.Microservices.Cor100300.git"]
+                      ]])
+                     dir("${WORKSPACE}/Corcentric.Microservices.Cor100300"){
+                       def nugetConfigContent = readFile(file: "nuget.config")
+                       withCredentials([usernamePassword(credentialsId: "github", usernameVariable: 'USERNAME', passwordVariable: 'PASSWORD')]) {
+                         nugetConfigContent = nugetConfigContent.replaceAll('%CORNEXGEN_USERNAME%', USERNAME)
+                         nugetConfigContent = nugetConfigContent.replaceAll('%CORNEXGEN_GITHUB_PAT%', PASSWORD)
+                       }
+                       writeFile(file: "nuget.config", text: nugetConfigContent)
+                     }
+                  }
+                }
+            }
+        }
+        stage ('Sonar'){
+            steps {
+                script {
+                    container('aspnet') {
+                        def scannerHome = tool 'SonarScanner for MSBuild'
+                        dir ("${WORKSPACE}/Corcentric.Microservices.Cor100300"){
+                            withSonarQubeEnv() {
+                              sh "dotnet ${scannerHome}/SonarScanner.MSBuild.dll begin /k:\"cor100300\""
+                              sh "dotnet build Corcentric.Microservices.Cor100300.sln"
+                              sh "dotnet ${scannerHome}/SonarScanner.MSBuild.dll end"
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

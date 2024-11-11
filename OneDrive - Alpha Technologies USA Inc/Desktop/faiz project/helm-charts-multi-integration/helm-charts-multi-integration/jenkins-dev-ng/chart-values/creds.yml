@@ -1,0 +1,50 @@
+controller:
+  JCasC:
+    configScripts:
+      security: |-
+        jenkins:
+          securityRealm:
+            activeDirectory:
+              bindPassword: ""
+              customDomain: true
+              domains:
+              - bindName: "adreader@determine.org"
+                bindPassword: ${readFile:/vault/secrets/bindadpassword}
+                name: "determine.org"
+                servers: "10.100.0.77:3268"
+                tlsConfiguration: TRUST_ALL_CERTIFICATES
+              groupLookupStrategy: AUTO
+              removeIrrelevantGroups: false
+              startTls: true
+        security:
+          globalJobDslSecurityConfiguration:
+            useScriptSecurity: false
+          gitHostKeyVerificationConfiguration:
+            sshHostKeyVerificationStrategy: "acceptFirstConnectionStrategy"
+      credentials: |-
+        credentials:
+          system:
+            domainCredentials:
+            - credentials:
+              - usernamePassword:
+                  id: "github"
+                  password: ${readFile:/vault/secrets/ghtoken}
+                  scope: GLOBAL
+                  username: "gite-jenkins-azea_corc"
+              - string:
+                  id: "GITHUB_TOKEN"
+                  scope: GLOBAL
+                  secret: ${readFile:/vault/secrets/ghtoken}
+              - string:
+                  id: "SONAR_TOKEN"
+                  scope: GLOBAL
+                  secret: ${readFile:/vault/secrets/sonartoken}
+      authorization: |-
+        jenkins:
+          authorizationStrategy:
+            globalMatrix:
+              entries:
+              - group:
+                  name: "webops"
+                  permissions:
+                  - "Overall/Administer"

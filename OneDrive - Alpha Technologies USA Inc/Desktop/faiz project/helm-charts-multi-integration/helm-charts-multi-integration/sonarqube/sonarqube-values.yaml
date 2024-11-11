@@ -1,0 +1,11 @@
+ingress:
+  enabled: true
+  ingressClassName: alb
+  annotations:
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTPS":443}, {"HTTP":80}]'
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/scheme: internal
+    alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:us-east-2:191134568411:certificate/1c3768ec-3ca0-4664-95fd-fbe8166f66d5
+  hosts:
+    - name: sonarqube-dev-nextgen.corcentric.com
+      path: /*

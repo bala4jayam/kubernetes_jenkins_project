@@ -1,0 +1,62 @@
+cluster_name: dev
+logs:
+  host: logs-corcentric-dev.us-east4.gcp.opsverse.cloud
+  username: devopsnow
+  password: ovudb0gn1o
+  multiline:
+    snippet: |
+      - multiline:
+          firstline: '^\d{2,4}\-\d{2,4}\-\d{2,4} \d{2,4}\:\d{2,4}\:\d{2,4}\.\d{1,6}'
+          max_lines: 200
+victoria-metrics-agent:
+  remoteWriteUrls:
+    - https://metrics-corcentric-dev.us-east4.gcp.opsverse.cloud/api/v1/write
+  extraArgs:
+    remoteWrite.basicAuth.password: ovudb0gn1o
+    remoteWrite.basicAuth.username: devopsnow
+    remoteWrite.label: cluster=dev
+  extraScrapeConfigs:
+    - job_name: kafka-msk-jmx
+      scrape_interval: 2m
+      static_configs:
+        - targets: ["b-1.mskdev.jxbjaz.c6.kafka.us-east-2.amazonaws.com:11001","b-2.mskdev.jxbjaz.c6.kafka.us-east-2.amazonaws.com:11001"]
+    - job_name: kafka-msk-node
+      scrape_interval: 2m
+      static_configs:
+        - targets: ["b-1.mskdev.jxbjaz.c6.kafka.us-east-2.amazonaws.com:11002","b-2.mskdev.jxbjaz.c6.kafka.us-east-2.amazonaws.com:11002"]
+otelcollector:
+  enabled: true
+  jaeger:
+    url: >-
+      https://traces-collector-corcentric-dev.us-east4.gcp.opsverse.cloud/api/v2/spans
+    auth: Basic ZGV2b3Bzbm93Om92dWRiMGduMW8=
+# Enable this section to pull metrics from postgresql DBs
+postgres-exporter:
+  enabled: true
+  podLabels:
+    db-instance-name: ""
+  config:
+    datasource:
+      # Specify one of both datasource or datasourceSecret
+      host: "nextgen-dev-postgres.cecwlwdtdu3v.us-east-2.rds.amazonaws.com"
+      user: master
+      # Only one of password and passwordSecret can be specified
+      password: "7V4Dnf76FUsPSj93umh8"
+      # Specify passwordSecret if DB password is stored in secret.
+      passwordSecret: {}
+      # Secret name
+      #  name:
+      # Password key inside secret
+      #  key:
+      port: "5432"
+      database: "nextgendev"
+      sslmode: require
+    datasourceSecret: {}
+      # Specifies if datasource should be sourced from secret value in format: postgresql://login:password@hostname:port/dbname?sslmode=disable
+      # Multiple Postgres databases can be configured by comma separated postgres connection strings
+      # Secret name
+      #  name:
+      # Connection string key inside secret
+      #  key:
+  annotations:
+    prometheus.io/scrape: 'true'

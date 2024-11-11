@@ -1,0 +1,42 @@
+controller:
+  adminUser: "admin"
+  image:
+  tag: 
+  serviceType: ClusterIP
+  jenkinsUrlProtocol: "https"
+  jenkinsUrl: https://jenkins-dev-nextgen.corcentric.com
+  jenkinsAdminEmail: "jenkins-dev-ng <jenkins@corcentric.com>"
+  customJenkinsLabels: master
+  numExecutors: 0
+  # servicePort: 443
+  statefulSetAnnotations:
+    cluster-autoscaler.kubernetes.io/safe-to-evict: "false"
+  resources:
+    requests:
+      cpu: "50m"
+      memory: "1Gi"
+    limits:
+      cpu: "1000m"
+      memory: "4Gi"
+  javaOpts: >
+    -Dorg.csanchez.jenkins.plugins.kubernetes.pipeline.ContainerExecDecorator.websocketConnectionTimeout=300
+
+  # nodeSelector: 
+  #   eks.amazonaws.com/capacityType: ON_DEMAND
+  #   topology.kubernetes.io/zone: eu-central-1a
+
+  installPlugins: []
+  
+  ingress:
+    enabled: true
+    ingressClassName: alb
+    annotations:
+      # kubernetes.io/ingress.class: alb
+      alb.ingress.kubernetes.io/listen-ports: '[{"HTTPS":443}, {"HTTP":80}]'
+      alb.ingress.kubernetes.io/target-type: ip
+      alb.ingress.kubernetes.io/scheme: internal
+      alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:us-east-2:191134568411:certificate/1c3768ec-3ca0-4664-95fd-fbe8166f66d5
+    hostName: jenkins-dev-nextgen.corcentric.com
+
+persistence:
+  size: "50Gi"

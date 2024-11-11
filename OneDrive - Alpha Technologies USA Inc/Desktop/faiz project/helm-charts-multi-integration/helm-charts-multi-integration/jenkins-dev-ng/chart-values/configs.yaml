@@ -1,0 +1,25 @@
+controller:
+  JCasC:
+    defaultConfig: true
+    configScripts:
+      tools: |-
+        tool:
+          msBuildSQRunnerInstallation:
+            installations:
+            - name: "SonarScanner for MSBuild"
+              properties:
+              - installSource:
+                  installers:
+                  - msBuildSonarQubeRunnerInstaller:
+                      id: "6.0.0.81631-net"
+      sonar: |-
+        unclassified:
+          sonarGlobalConfiguration:
+            buildWrapperEnabled: false
+            installations:
+            - credentialsId: "SONAR_TOKEN"
+              name: "SONARQUBE"
+              serverUrl: "http://sonarqube-sonarqube.sonarqube.svc.cluster.local:9000"
+              triggers:
+                skipScmCause: false
+                skipUpstreamCause: false

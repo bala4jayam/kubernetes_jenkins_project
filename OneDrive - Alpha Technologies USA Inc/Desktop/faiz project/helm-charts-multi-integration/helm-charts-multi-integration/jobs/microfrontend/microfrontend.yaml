@@ -1,0 +1,104 @@
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: microfrontend-cornexgen
+  labels:
+    helm.sh/chart: cornexgen-0.1.0
+    app.kubernetes.io/name: cornexgen
+    app.kubernetes.io/instance: microfrontend
+    app.kubernetes.io/version: "1.16.0"
+    app.kubernetes.io/managed-by: Helm
+automountServiceAccountToken: true
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: microfrontend-cornexgen
+  labels:
+    helm.sh/chart: cornexgen-0.1.0
+    app.kubernetes.io/name: cornexgen
+    app.kubernetes.io/instance: microfrontend
+    app.kubernetes.io/version: "1.16.0"
+    app.kubernetes.io/managed-by: Helm
+spec:
+  type: ClusterIP
+  ports:
+    - port: 80
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    app.kubernetes.io/name: cornexgen
+    app.kubernetes.io/instance: microfrontend
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: microfrontend-cornexgen
+  labels:
+    helm.sh/chart: cornexgen-0.1.0
+    app.kubernetes.io/name: cornexgen
+    app.kubernetes.io/instance: microfrontend
+    app.kubernetes.io/version: "1.16.0"
+    app.kubernetes.io/managed-by: Helm
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: cornexgen
+      app.kubernetes.io/instance: microfrontend
+  template:
+    metadata:
+      labels:
+        helm.sh/chart: cornexgen-0.1.0
+        app.kubernetes.io/name: cornexgen
+        app.kubernetes.io/instance: microfrontend
+        app.kubernetes.io/version: "1.16.0"
+        app.kubernetes.io/managed-by: Helm
+    spec:
+      serviceAccountName: microfrontend-cornexgen
+      securityContext:
+        {}
+      containers:
+        - name: cornexgen
+          securityContext:
+            {}
+          image: "191134568411.dkr.ecr.us-east-2.amazonaws.com/microfrontend:v1"
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 80
+              protocol: TCP
+          resources:
+            {}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: microfrontend-cornexgen
+  labels:
+    helm.sh/chart: cornexgen-0.1.0
+    app.kubernetes.io/name: cornexgen
+    app.kubernetes.io/instance: microfrontend
+    app.kubernetes.io/version: "1.16.0"
+    app.kubernetes.io/managed-by: Helm
+  annotations:
+    alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:us-east-2:191134568411:certificate/1c3768ec-3ca0-4664-95fd-fbe8166f66d5
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTPS":443}, {"HTTP":80}]'
+    alb.ingress.kubernetes.io/scheme: internal
+    alb.ingress.kubernetes.io/target-type: ip
+spec:
+  ingressClassName: alb
+  rules:
+    - host: "microfrontend-dev-nexgen.corcentric.com"
+      http:
+        paths:
+          - path: /*
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: microfrontend-cornexgen
+                port:
+                  number: 80
+---

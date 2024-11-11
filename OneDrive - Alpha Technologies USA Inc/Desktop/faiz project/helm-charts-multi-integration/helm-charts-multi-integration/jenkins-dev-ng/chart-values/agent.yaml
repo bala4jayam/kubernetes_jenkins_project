@@ -1,0 +1,29 @@
+agent:
+  enabled: true
+  containerCap: 50
+  defaultsProviderTemplate: "default"
+  maxRequestsPerHostStr: "64"
+  image:
+  tag:
+  nodeUsageMode: "EXCLUSIVE"
+  resources:
+    requests:
+      cpu: "200m"
+      memory: "256Mi"
+    limits:
+      cpu: "500m"
+      memory: "512Mi"
+
+rbac:
+  create: true
+  readSecrets: true
+
+serviceAccount:
+  name: jenkins
+  annotations:
+    description: "Used by release {{ .Release.Name }} for role-based access control"
+serviceAccountAgent:
+  create: true
+  name: jenkins-agent
+  annotations:
+    description: "Used by release {{ .Release.Name }} for role-based access control"

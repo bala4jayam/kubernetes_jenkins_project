@@ -1,0 +1,69 @@
+pipeline {
+  parameters {
+    string( name: "gittag", description: "tag version of matrix", defaultValue: "main", trim: false)
+  }
+    agent {
+        kubernetes {
+            serviceAccount "jenkins-agent"
+            yaml '''
+apiVersion: v1
+kind: Pod
+spec:
+  containers:
+  - name: helm
+    image: 191134568411.dkr.ecr.us-east-2.amazonaws.com/jenkins-agent:kubectl-helm3-yq4
+    command:
+    - sleep
+    args:
+    - infinity
+  - name: kaniko
+    image: 191134568411.dkr.ecr.us-east-2.amazonaws.com/jenkins-agent:kaniko-debug
+    command:
+    - sleep
+    args:
+    - infinity
+'''
+            defaultContainer 'helm'
+        }
+    }
+    stages {
+        stage('Main') {
+            steps {
+                script {
+                  container('jnlp') {
+                    checkout([
+                      $class: 'GitSCM',
+                      branches: [[name: "${params.gittag}"]],
+                      extensions: [
+                        [$class: 'RelativeTargetDirectory', relativeTargetDir: "${WORKSPACE}/Corcentric.Microservices.Cor100100"]
+                      ], gitTool: 'Default',
+                      userRemoteConfigs: [
+                        [credentialsId: 'github', url: "https://github.com/CorNexGen/Corcentric.Microservices.Cor100100.git"]
+                      ]])
+                    sh "ls -lsa"
+                  }
+                  container('kaniko') {
+                    dir("${WORKSPACE}/Corcentric.Microservices.Cor100100"){
+                      def nugetConfigContent = readFile(file: "nuget.config")
+                      withCredentials([usernamePassword(credentialsId: "github", usernameVariable: 'USERNAME', passwordVariable: 'PASSWORD')]) {
+                        nugetConfigContent = nugetConfigContent.replaceAll('%CORNEXGEN_USERNAME%', USERNAME)
+                        nugetConfigContent = nugetConfigContent.replaceAll('%CORNEXGEN_GITHUB_PAT%', PASSWORD)
+                      }
+                      writeFile(file: "nuget.config", text: nugetConfigContent)
+                      sh "/kaniko/executor \
+                      --dockerfile Corcentric.Microservices.Cor100100/Dockerfile \
+                      --context ${WORKSPACE}/Corcentric.Microservices.Cor100100 \
+                      --destination 191134568411.dkr.ecr.us-east-2.amazonaws.com/cor100100:auto-${env.BUILD_ID} \
+                      --destination 191134568411.dkr.ecr.us-east-2.amazonaws.com/cor100100:latest"
+                    }
+                  }
+                  container('jnlp') {
+                    build job:"cor100100-deploy" , parameters:[
+                      string(name: "imgtag", value: "auto-${env.BUILD_ID}")
+                    ]
+                  }
+                }
+            }
+        }
+    }
+}

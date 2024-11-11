@@ -1,0 +1,26 @@
+replicaCount: 4
+image:
+  repository: 191134568411.dkr.ecr.us-east-2.amazonaws.com/cor100100
+  pullPolicy: IfNotPresent
+  tag: 25677f7a
+env:
+  ASPNETCORE_ENVIRONMENT: Development
+  ASPNETCORE_URLS: http://+:80
+  ALLOWED_CONSUMER_URLS: https://microfrontend-dev-nexgen.corcentric.com/, https://microfrontend-dev-nexgen.corcentric.com/*
+  Telemetry__Otlp: http://otel-collector.devopsnow.svc.cluster.local:4317
+secretenv:
+  enabled: true
+ingress:
+  enabled: true
+  className: alb
+  annotations:
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTPS":443}, {"HTTP":80}]'
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/scheme: internal
+    alb.ingress.kubernetes.io/healthcheck-path: /swagger/index.html
+    alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:us-east-2:191134568411:certificate/1c3768ec-3ca0-4664-95fd-fbe8166f66d5
+  hosts:
+    - host: cor100100-dev-nexgen.corcentric.com
+      paths:
+        - path: /*
+          pathType: ImplementationSpecific

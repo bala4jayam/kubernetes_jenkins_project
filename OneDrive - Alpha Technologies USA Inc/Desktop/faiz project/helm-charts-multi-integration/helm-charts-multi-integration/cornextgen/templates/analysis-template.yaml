@@ -1,0 +1,22 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AnalysisTemplate
+metadata:
+  name: success-rate
+spec:
+  args:
+  - name: job-name
+  metrics:
+  - name: success-rate
+    successCondition: result[0] < 200
+    failureLimit: 3
+    count: 3
+    interval: 1m
+    provider:
+      prometheus:
+        headers:
+          - key: Authorization
+            value: Basic ZGV2b3Bzbm93Om92dWRiMGduMW8=
+        address: https://metrics-corcentric-dev.us-east4.gcp.opsverse.cloud
+        timeout: 20
+        query: |
+          max by (time) (max(container_memory_usage_bytes{pod=~"cor100100-cornextgen-.*"}))/1000000

@@ -1,0 +1,78 @@
+pipeline {
+  parameters {
+    string( name: "gittagcat", description: "tag version of catalog", defaultValue: "main", trim: false)
+    string( name: "gittagplat", description: "tag version of platform", defaultValue: "main", trim: false)
+    string( name: "gittagreg", description: "tag version of registry", defaultValue: "main", trim: false)
+    booleanParam(defaultValue: false, name: 'update',description: 'Update pod')
+  }
+    agent {
+        kubernetes {
+            serviceAccount "jenkins-eks"
+            yaml '''
+apiVersion: v1
+kind: Pod
+spec:
+  containers:
+  - name: helm
+    image: 191134568411.dkr.ecr.us-east-2.amazonaws.com/jenkins-agent:kubectl-helm3-yq4
+    command:
+    - sleep
+    args:
+    - infinity
+  - name: kaniko
+    image: 191134568411.dkr.ecr.us-east-2.amazonaws.com/jenkins-agent:kaniko-debug
+    command:
+    - sleep
+    args:
+    - infinity
+'''
+            defaultContainer 'helm'
+        }
+    }
+    stages {
+        stage('Main') {
+            steps {
+                script {
+                  def repo_list = [:]
+                  repo_list["catalog"] = ["https://github.com/CorNexGen/Corcentric.Microfrontend.Catalog.git","${params.gittagcat}"]
+                  repo_list["registry"] = ["https://github.com/CorNexGen/Corcentric.Microfrontend.Base.Registry.git","${params.gittagplat}"]
+                  repo_list["platform"] = ["https://github.com/CorNexGen/Corcentric.Microfrontend.Platform.git","${params.gittagreg}"]
+
+                  repo_list.each { key, value ->
+                    container('jnlp') {
+                      checkout([
+                        $class: 'GitSCM',
+                        branches: [[name: "${value[1]}"]],
+                        extensions: [
+                          [$class: 'RelativeTargetDirectory', relativeTargetDir: "${WORKSPACE}/jobs/microfrontend/${key}"]
+                        ], gitTool: 'Default',
+                        userRemoteConfigs: [
+                          [credentialsId: 'github', url: "${value[0]}"]
+                        ]])
+                    }
+                    sh "ls -lsa"
+                    sh "ls -lsa ${WORKSPACE}/jobs/microfrontend/${key}"
+                    
+                  }
+                  container('kaniko') {
+                    dir("${WORKSPACE}/jobs/microfrontend"){
+                      sh "/kaniko/executor \
+                      --dockerfile ${WORKSPACE}/jobs/microfrontend/Dockerfile \
+                      --context ${WORKSPACE}/jobs/microfrontend/ \
+                      --destination 191134568411.dkr.ecr.us-east-2.amazonaws.com/microfrontend:auto-${env.BUILD_ID}"
+                    }
+                  }
+                  container('helm') {
+                    def deployfile = readFile("${WORKSPACE}/jobs/microfrontend/microfrontend.yaml")
+                    deployfile = deployfile.replaceAll("microfrontend:v1", "microfrontend:auto-${env.BUILD_ID}")
+                    writeFile(file: "${WORKSPACE}/jobs/microfrontend/microfrontend.yaml", text: deployfile)
+                    sh "cat ${WORKSPACE}/jobs/microfrontend/microfrontend.yaml"
+                    if(params.update){
+                      sh "kubectl apply -n nextgen-dev -f  ${WORKSPACE}/jobs/microfrontend/microfrontend.yaml"
+                    }
+                  }
+                }
+            }
+        }
+    }
+}

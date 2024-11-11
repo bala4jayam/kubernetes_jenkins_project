@@ -1,0 +1,48 @@
+pipeline {
+  parameters {
+    string( name: "gittag", description: "tag version of repo", defaultValue: "main", trim: true)
+    string( name: "imgtag", description: "tag version of image", defaultValue: "dev", trim: true)
+    string( name: "app", description: "Release name", defaultValue: "cor100300", trim: true)
+    string( name: "namespace", description: "namespace", defaultValue: "nextgen-qa", trim: true)
+  }
+    agent {
+        kubernetes {
+            serviceAccount "jenkins-eks"
+            yaml '''
+apiVersion: v1
+kind: Pod
+spec:
+  containers:
+  - name: helm
+    image: 191134568411.dkr.ecr.us-east-2.amazonaws.com/jenkins-agent:kubectl-helm3-yq4
+    command:
+    - sleep
+    args:
+    - infinity
+'''
+            defaultContainer 'helm'
+        }
+    }
+    stages {
+        stage('Main') {
+            steps {
+                script {
+                  container('helm') {
+                    sh "aws eks --region us-east-1 update-kubeconfig --name eks-qa"
+                    sh """helm template ${params.app} cornextgen \
+                    -f cor100300/qa/values.yaml \
+                    --set image.repository="191134568411.dkr.ecr.us-east-2.amazonaws.com/cor100300" \
+                    --set image.tag="${params.imgtag}"
+                    """
+                    sh """helm upgrade --install ${params.app} cornextgen \
+                    -n ${params.namespace} --create-namespace --wait \
+                    -f cor100300/qa/values.yaml \
+                    --set image.repository="191134568411.dkr.ecr.us-east-2.amazonaws.com/cor100300" \
+                    --set image.tag="${params.imgtag}"
+                    """
+                  }
+                }
+            }
+        }
+    }
+}
