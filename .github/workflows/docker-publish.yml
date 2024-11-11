@@ -1,98 +1,270 @@
-name: Docker
-
-# This workflow uses actions that are not certified by GitHub.
-# They are provided by a third-party and are governed by
-# separate terms of service, privacy policy, and support
-# documentation.
+name: Release CI/CD Pipeline
 
 on:
-  schedule:
-    - cron: '18 9 * * *'
   push:
-    branches: [ "main" ]
-    # Publish semver tags as releases.
-    tags: [ 'v*.*.*' ]
-  pull_request:
-    branches: [ "main" ]
+    branches: multi-integration
+
+permissions:
+  contents: write
+  pull-requests: write
+  packages: write
+  repository-projects: read    
+
+concurrency:
+  group: release-${{ github.ref_name }}
+  cancel-in-progress: true
 
 env:
-  # Use docker.io for Docker Hub if empty
-  REGISTRY: ghcr.io
-  # github.repository as <account>/<repo>
-  IMAGE_NAME: ${{ github.repository }}
+  ECR_AWS_REGION: "us-east-1"
+  HARBOR_REGISTRY: docker.dev.integration.corcentric.com
+  #HARBOR_REPOSITORY: karavan/camel-scheduler-integration
+  # ECR_REPOSITORY_DEV: corcentric-nexgen-dev-karavan-application
+  # ECR_REPOSITORY_QA: corcentric-nexgen-qa-karavan-application
+  #ECR_REPOSITORY_UAT: corcentric-nexgen-uat-msa-tradingpartner-directory
+  #ECR_REPOSITORY_PROD: corcentric-nexgen-prod-msa-tradingpartner-directory
+  ECR_VULNERABILITIES_THRESHOLD: 'high'
+  #DOCKER_BUILD_FILE: ./Dockerfile
+  #DOCKER_BUILD_ARGS: COR_USERNAME=gite-jenkins-azea_corc
+  DOCKER_BUILD_TARGET: final
 
+  # GITHUB_NUGET: https://nuget.pkg.github.com/CorSharedServices/index.json
+  PROJECT_NAME: corcentric-nexgen-dev-karavan-application
+  # PROJECT_FOLDER: ./
+
+  # Code checks
+  # SONAR_HOST_URL: http://sonarqube-dev-nexgen.corcentric.com
+  # SONAR_PROJECT_KEY: MsaTradingPartnerDirectory
+  # SONAR_RUNNER: eks-dev-app-corapp
+  GHA_USERNAME: gite-jenkins-azea_corc  
+
+  ARGO_ADDRESS_NON_PROD: test-deploy.corcentric.net
+  ARGO_ADDRESS_PROD: deploy.corcentric.net
+  ARGO_PROPERTY_PATH: '$["karavanapplication"].image.tag'
+  CUSTOM_VERSION: dev
 
 jobs:
-  build:
-
+  init:
+    name: Setup
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
-      # This is used to complete the identity challenge
-      # with sigstore/fulcio when running outside of PRs.
-      id-token: write
-
     steps:
-      - name: Checkout repository
+      - name: Set environment variables based on directory
+        id: set-vars
+        run: |
+         
+    outputs:  
+      ECR_AWS_REGION: ${{env.ECR_AWS_REGION }}
+      HARBOR_REGISTRY: ${{env.HARBOR_REGISTRY }}
+   #   HARBOR_REPOSITORY: ${{env.HARBOR_REPOSITORY }}
+      DOCKER_BUILD_TARGET: ${{ env.DOCKER_BUILD_TARGET }}
+      GHA_USERNAME: ${{ env.GHA_USERNAME }}      
+      PROJECT_NAME: ${{ env.PROJECT_NAME }}
+
+      ARGO_ADDRESS_NON_PROD: ${{ env.ARGO_ADDRESS_NON_PROD }}
+      ARGO_ADDRESS_PROD: ${{ env.ARGO_ADDRESS_PROD }}
+      ARGO_PROPERTY_PATH: ${{ env.ARGO_PROPERTY_PATH }}
+      CUSTOM_VERSION: ${{ env.CUSTOM_VERSION }}
+     
+
+  tag-check:
+    runs-on: ubuntu-latest
+    needs: [ init]
+    outputs:
+      DOCKER_TAG: ${{ steps.read_tag.outputs.DOCKER_TAG }}
+      INT_PATH: ${{ steps.path_check.outputs.INT_PATH }}
+      SKIP_PIPLINE: ${{ steps.check_tag.outputs.SKIP_PIPLINE }}
+      ECR_REPOSITORY_QA: ${{steps.gen_variable.outputs.ECR_REPOSITORY_QA }}
+      ECR_VULNERABILITIES_THRESHOLD: ${{ env.ECR_VULNERABILITIES_THRESHOLD }}
+      ECR_REPOSITORY_DEV: ${{steps.gen_variable.outputs.ECR_REPOSITORY_DEV }}
+      PROJECT_FOLDER: ${{steps.gen_variable.outputs.PROJECT_FOLDER }}
+      VALUES_REPO: ${{steps.gen_variable.outputs.VALUES_REPO}}
+      VALUES_FILE_DEV: ${{steps.gen_variable.outputs.VALUES_FILE_DEV}}
+      VALUES_FILE_QA: ${{steps.gen_variable.outputs.VALUES_FILE_QA}}
+      DEPLOY_BRANCH: ${{steps.gen_variable.outputs.DEPLOY_BRANCH}}
+      ARGO_APP_NAME_DEV: ${{steps.gen_variable.outputs.ARGO_APP_NAME_DEV}}
+      ARGO_APP_NAME_QA: ${{steps.gen_variable.outputs.ARGO_APP_NAME_QA}}
+      HARBOR_REPOSITORY: ${{steps.gen_variable.outputs.HARBOR_REPOSITORY}}
+    steps:
+      - name: Checkout the repository
         uses: actions/checkout@v4
+      - name: read docker tag from file
+        id: read_tag
+        run: |
+          TAG=$(cat  integration-cd-details.txt | grep "docker_tag" | cut -d'=' -f2 | tr -d '"')
+          echo "DOCKER_TAG=$TAG" >> $GITHUB_OUTPUT
+      - name: skipping pipeline if tag is 'dev'
+        id: check_tag
+        run: |
+          if [ "${{ steps.read_tag.outputs.DOCKER_TAG}}" == "dev" ]; then
+            echo "SKIP_PIPLINE=true" >> $GITHUB_OUTPUT
+          else
+            echo "SKIP_PIPLINE=false" >> $GITHUB_OUTPUT
+            fi
+      - name: reading integration path
+        id: path_check
+        run: |
+          int_path=$(cat  integration-cd-details.txt | grep "integration_path" | cut -d'=' -f2 | tr -d '"')
+          echo "INT_PATH=$int_path" >> $GITHUB_OUTPUT
+          echo $INT_PATH
+      - name: generating the env variable
+        id: gen_variable
+        run: |
+          if [ "${{ steps.path_check.outputs.INT_PATH}}" == "camel-scheduler-integration/" ]; then
+            echo "ECR_REPOSITORY_DEV=corcentric-nexgen-dev-karavan-application" >> $GITHUB_OUTPUT
+            echo "ECR_REPOSITORY_QA=corcentric-nexgen-qa-karavan-application" >> $GITHUB_OUTPUT
+            echo "PROJECT_FOLDER=camel-scheduler-integration" >> $GITHUB_OUTPUT
+            echo "VALUES_REPO=CorcentricDevOps/helm-charts" >> $GITHUB_OUTPUT
+            echo "VALUES_FILE_DEV=karavan-application/values-dev.yaml" >> $GITHUB_OUTPUT
+            echo "VALUES_FILE_QA=karavan-application/values-qa.yaml" >> $GITHUB_OUTPUT
+            echo "DEPLOY_BRANCH=karavan-helm2" >> $GITHUB_OUTPUT
+            echo "ARGO_APP_NAME_DEV=dev-karavan" >> $GITHUB_OUTPUT
+            echo "ARGO_APP_NAME_QA=qa-karavan" >> $GITHUB_OUTPUT
+            echo "HARBOR_REPOSITORY=karavan/camel-scheduler-integration" >> $GITHUB_OUTPUT
+          elif [ "${{ steps.path_check.outputs.INT_PATH}}" == "reroutedata/" ]; then
+            echo "ECR_REPOSITORY_DEV=corcentric-nexgen-dev-karavan-application" >> $GITHUB_OUTPUT
+            echo "ECR_REPOSITORY_QA=corcentric-nexgen-qa-karavan2-application" >> $GITHUB_OUTPUT
+            echo "PROJECT_FOLDER=reroutedata" >> $GITHUB_OUTPUT
+            echo "VALUES_REPO=CorcentricDevOps/helm-charts" >> $GITHUB_OUTPUT
+            echo "VALUES_FILE_DEV=karavan-application/values-dev.yaml" >> $GITHUB_OUTPUT
+            echo "VALUES_FILE_QA=karavan-application/values-qa.yaml" >> $GITHUB_OUTPUT
+            echo "DEPLOY_BRANCH=karavan-helm2" >> $GITHUB_OUTPUT
+            echo "ARGO_APP_NAME_DEV=dev-karavan2" >> $GITHUB_OUTPUT
+            echo "ARGO_APP_NAME_QA=qa-karavan2" >> $GITHUB_OUTPUT
+            echo "HARBOR_REPOSITORY=karavan/reroutedata" >> $GITHUB_OUTPUT
+           
+          fi
 
-      # Install the cosign tool except on PR
-      # https://github.com/sigstore/cosign-installer
-      - name: Install cosign
-        if: github.event_name != 'pull_request'
-        uses: sigstore/cosign-installer@59acb6260d9c0ba8f4a2f9d9b48431a222b68e20 #v3.5.0
-        with:
-          cosign-release: 'v2.2.4'
 
-      # Set up BuildKit Docker container builder to be able to build
-      # multi-platform images and export cache
-      # https://github.com/docker/setup-buildx-action
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@f95db51fddba0c2d1ec667646a06c2ce06100226 # v3.0.0
 
-      # Login against a Docker registry except on PR
-      # https://github.com/docker/login-action
-      - name: Log into registry ${{ env.REGISTRY }}
-        if: github.event_name != 'pull_request'
-        uses: docker/login-action@343f7c4344506bcbf9b4de18042ae17996df046d # v3.0.0
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
 
-      # Extract metadata (tags, labels) for Docker
-      # https://github.com/docker/metadata-action
-      - name: Extract Docker metadata
-        id: meta
-        uses: docker/metadata-action@96383f45573cb7f253c731d3b3ab81c87ef81934 # v5.0.0
-        with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+      - run: echo "ECR_REPOSITORY_DEV=$ECR_REPOSITORY_DEV"
+      - run: echo "ECR_REPOSITORY_QA=$ECR_REPOSITORY_QA"
+      - run: echo "PROJECT_FOLDER=$PROJECT_FOLDER"
+      - run: echo "VALUES_REPO=$VALUES_REPO"
+      - run: echo "VALUES_FILE_DEV=$VALUES_FILE_DEV"
+      - run: echo "VALUES_FILE_QA=$VALUES_FILE_QA"
+      - run: echo "DEPLOY_BRANCH=$DEPLOY_BRANCH"
+      - run: echo "ARGO_APP_NAME_DEV=$ARGO_APP_NAME_DEV"
+      - run: echo "ARGO_APP_NAME_QA=$ARGO_APP_NAME_QA"
 
-      # Build and push Docker image with Buildx (don't push on PR)
-      # https://github.com/docker/build-push-action
-      - name: Build and push Docker image
-        id: build-and-push
-        uses: docker/build-push-action@0565240e2d4ab88bba5387d719585280857ece09 # v5.0.0
-        with:
-          context: .
-          push: ${{ github.event_name != 'pull_request' }}
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+ 
+  bump:
+    name: Bump version
+    needs: [ init,tag-check ]
+    uses: CorcentricGHWorkflows/reusable-workflows/.github/workflows/mod_commitizen_bump.yml@v1.0.12
+    with:
+      project-type: none
+    secrets:
+      gh-token: ${{ secrets.GH_TOKEN }}
+  release:
+    name: Create release
+    needs: [ init,tag-check,bump ]
+    if: ${{ needs.bump.outputs.version }}
+    uses: CorcentricGHWorkflows/reusable-workflows/.github/workflows/mod_release_create.yml@v1.0.12
+    secrets: inherit
+    with:
+      tag: ${{ needs.bump.outputs.tag }}
+      changelog: ${{ needs.bump.outputs.changelog || 'No changelog found' }}
 
-      # Sign the resulting Docker image digest except on PRs.
-      # This will only write to the public Rekor transparency log when the Docker
-      # repository is public to avoid leaking data.  If you would like to publish
-      # transparency data even for private images, pass --force to cosign below.
-      # https://github.com/sigstore/cosign
-      - name: Sign the published Docker image
-        if: ${{ github.event_name != 'pull_request' }}
-        env:
-          # https://docs.github.com/en/actions/security-guides/security-hardening-for-github-actions#using-an-intermediate-environment-variable
-          TAGS: ${{ steps.meta.outputs.tags }}
-          DIGEST: ${{ steps.build-and-push.outputs.digest }}
-        # This step uses the identity token to provision an ephemeral certificate
-        # against the sigstore community Fulcio instance.
-        run: echo "${TAGS}" | xargs -I {} cosign sign --yes {}@${DIGEST}
+  promote_image_to_dev:
+    name: copy image Harbor to ecr
+    needs: [ init,tag-check,bump ]
+    if: needs.tag-check.outputs.SKIP_PIPLINE=='false'
+    uses: CorcentricGHWorkflows/reusable-workflows/.github/workflows/mod_harbor_image_copy.yml@harbor_pull
+    with:
+      harbor-registry:  ${{ needs.init.outputs.HARBOR_REGISTRY }}
+      harbor-repository: ${{ needs.tag-check.outputs.HARBOR_REPOSITORY }}      
+      ecr-repository: ${{ needs.tag-check.outputs.ECR_REPOSITORY_DEV }}
+      version: ${{needs.tag-check.outputs.DOCKER_TAG}}
+    secrets:
+      harbor-username: ${{ secrets.HARBOR_USERNAME }}
+      harbor-password: ${{ secrets.HARBOR_PASSWORD }}
+      ECR_AWS_ACCESS_KEY: ${{ secrets.ECR_DEV_ACCESS_KEY }}
+      ECR_AWS_ACCESS_SECRET: ${{ secrets.ECR_DEV_ACCESS_SECRET }}
+
+  cd-dev:
+    name: CD Dev
+    needs: [ init,tag-check,bump,promote_image_to_dev]
+    if: needs.tag-check.outputs.SKIP_PIPLINE=='false'
+    uses: CorcentricGHWorkflows/reusable-workflows/.github/workflows/cor_argo_deploy.yml@v2.0.12
+    with:
+      VERSION: ${{needs.tag-check.outputs.DOCKER_TAG}}
+      VALUES_REPO: ${{needs.tag-check.outputs.VALUES_REPO}}
+      VALUES_FILE: ${{needs.tag-check.outputs.VALUES_FILE_DEV}}
+      DEPLOY_BRANCH:  ${{needs.tag-check.outputs.DEPLOY_BRANCH}}
+      ARGO_APP_NAME: ${{needs.tag-check.outputs.ARGO_APP_NAME_DEV}}
+      ARGO_ADDRESS: ${{ needs.init.outputs.ARGO_ADDRESS_NON_PROD }}
+      PUBLISH_TEAMS_NOTIFICATION: false
+      PROPERTY_PATH: ${{ needs.init.outputs.ARGO_PROPERTY_PATH }}
+    secrets:
+      ARGO_TOKEN: ${{ secrets.ARGOCD_KARAVAN_TOKEN }}
+      CORDEVOPS_GH_TOKEN: ${{ secrets.CORDEVOPS_GH_TOKEN }}
+      TEAMS_WEBHOOK: ${{ secrets.TEAMS_WEBHOOK }}
+ 
+  smoke:
+    name: Smoke tests
+    needs: [ init,tag-check,bump,promote_image_to_dev,cd-dev]
+    if: needs.tag-check.outputs.SKIP_PIPLINE=='false'
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          echo "No tests"
+
+  perf:
+    name: Performance tests
+    needs: [  init,tag-check,bump,promote_image_to_dev,smoke ]
+    if: needs.tag-check.outputs.SKIP_PIPLINE=='false'
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          echo "No tests"
+
+  security:
+    name: Security tests
+    needs: [  init,tag-check,bump,promote_image_to_dev, smoke ]
+    if: needs.tag-check.outputs.SKIP_PIPLINE=='false'
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          echo "No tests"
+
+  regression:
+    name: Regression tests
+    needs: [  init,tag-check,bump,promote_image_to_dev, smoke ]
+    if: needs.tag-check.outputs.SKIP_PIPLINE=='false'
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          echo "No tests"
+
+  # promote_to_qa:
+  #   name: Promote image to qa
+  #   needs: [ init,tag-check, promote_image_to_dev,cd-dev]
+  #   if: needs.tag-check.outputs.SKIP_PIPLINE=='false'
+  #   uses: CorcentricGHWorkflows/reusable-workflows/.github/workflows/mod_docker_image_copy.yml@v2.0.21
+  #   with:
+  #     tag:  ${{needs.tag-check.outputs.DOCKER_TAG}}
+  #     aws-region: ${{ needs.init.outputs.ECR_AWS_REGION }}
+  #     ecr-source-repository: ${{ needs.init.outputs.ECR_REPOSITORY_DEV }}
+  #     ecr-destination-repository: ${{ needs.init.outputs.ECR_REPOSITORY_QA }}
+  #   secrets:
+  #     ECR_AWS_ACCESS_KEY: ${{ secrets.ECR_DEV_ACCESS_KEY }}
+  #     ECR_AWS_ACCESS_SECRET: ${{ secrets.ECR_DEV_ACCESS_SECRET }}
+     
+  # cd-qa:
+  #   name: CD QA
+  #   needs: [ init,tag-check, promote_image_to_dev,cd-dev,promote_to_qa]
+  #   if: needs.tag-check.outputs.SKIP_PIPLINE=='false'
+  #   uses: CorcentricGHWorkflows/reusable-workflows/.github/workflows/cor_argo_deploy.yml@v2.0.12
+  #   with:
+  #     VERSION: ${{needs.tag-check.outputs.DOCKER_TAG}}
+  #     VALUES_REPO: "CorcentricDevOps/helm-charts"
+  #     VALUES_FILE: karavan-application/values-qa.yaml
+  #     DEPLOY_BRANCH: karavan-helm2
+  #     ARGO_APP_NAME: qa-karavan
+  #     ARGO_ADDRESS: ${{ needs.init.outputs.ARGO_ADDRESS_NON_PROD }}
+  #     PUBLISH_TEAMS_NOTIFICATION: false
+  #     PROPERTY_PATH: ${{ needs.init.outputs.ARGO_PROPERTY_PATH }}
+  #   secrets:
+  #     ARGO_TOKEN: ${{ secrets.ARGOCD_NEXGEN_TOKEN }}
+  #     CORDEVOPS_GH_TOKEN: ${{ secrets.CORDEVOPS_GH_TOKEN }}
+  #     TEAMS_WEBHOOK: ${{ secrets.TEAMS_WEBHOOK }}
